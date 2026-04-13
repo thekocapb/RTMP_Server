@@ -1,0 +1,7 @@
+*.ts
+*.flv
+*.mp4
+!html/**
+objs/
+.env
+.claude/

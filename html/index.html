@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRS — Просмотр потока</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            color: #fff;
+        }
+        .subtitle {
+            color: #888;
+            margin-bottom: 2rem;
+        }
+        .player-container {
+            width: 100%;
+            max-width: 960px;
+            background: #1a1a1a;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        }
+        video {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+        .controls {
+            padding: 1.5rem;
+        }
+        .input-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.95rem;
+        }
+        input:focus { outline: none; border-color: #4a9eff; }
+        button {
+            padding: 0.75rem 1.5rem;
+            background: #4a9eff;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+        button:hover { background: #3a8eef; }
+        .links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .links a {
+            padding: 0.5rem 1rem;
+            background: #2a2a2a;
+            color: #4a9eff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+        .links a:hover { background: #3a3a3a; }
+        .info {
+            max-width: 960px;
+            width: 100%;
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #1a1a1a;
+            border-radius: 12px;
+        }
+        .info h2 { font-size: 1.2rem; margin-bottom: 1rem; }
+        .info code {
+            display: block;
+            background: #2a2a2a;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+            overflow-x: auto;
+        }
+        #status {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+        .status-ok { background: #1a3a1a; color: #4caf50; }
+        .status-err { background: #3a1a1a; color: #f44336; }
+        .status-wait { background: #3a3a1a; color: #ffeb3b; }
+    </style>
+</head>
+<body>
+    <h1>SRS RTMP Server</h1>
+    <p class="subtitle">Просмотр потокового видео</p>
+
+    <div class="player-container">
+        <video id="videoPlayer" controls autoplay muted></video>
+        <div class="controls">
+            <div id="status" class="status-wait">Ожидание подключения...</div>
+            <div class="input-group">
+                <input type="text" id="streamUrl"
+                       value="http://localhost:8080/live/stream.flv"
+                       placeholder="URL потока (HLS или HTTP-FLV)">
+                <button onclick="playStream()">Воспроизвести</button>
+            </div>
+            <div class="links">
+                <a href="#" onclick="setUrl('http://localhost:8080/live/stream.flv')">HTTP-FLV</a>
+                <a href="#" onclick="setUrl('http://localhost:8080/live/stream.m3u8')">HLS</a>
+                <a href="http://localhost:1985/api/v1/streams/" target="_blank">API: Потоки</a>
+                <a href="http://localhost:1985/api/v1/clients/" target="_blank">API: Клиенты</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="info">
+        <h2>Как отправить поток на этот сервер</h2>
+        <p>Через FFmpeg:</p>
+        <code>ffmpeg -re -i video.mp4 -c:v libx264 -c:a aac -f flv rtmp://localhost:1935/live/stream</code>
+        <p style="margin-top:1rem">Через OBS Studio:</p>
+        <code>Сервер: rtmp://localhost:1935/live<br>Ключ потока: stream</code>
+    </div>
+
+    <!-- flv.js для воспроизведения HTTP-FLV -->
+    <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
+    <!-- hls.js для воспроизведения HLS -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+
+    <script>
+        let currentPlayer = null;
+
+        function setUrl(url) {
+            document.getElementById('streamUrl').value = url;
+            playStream();
+        }
+
+        function setStatus(text, type) {
+            const el = document.getElementById('status');
+            el.textContent = text;
+            el.className = 'status-' + type;
+        }
+
+        function playStream() {
+            const url = document.getElementById('streamUrl').value.trim();
+            const video = document.getElementById('videoPlayer');
+
+            // Остановить предыдущий плеер
+            if (currentPlayer) {
+                if (currentPlayer.destroy) currentPlayer.destroy();
+                currentPlayer = null;
+            }
+            video.src = '';
+
+            if (!url) {
+                setStatus('Введите URL потока', 'err');
+                return;
+            }
+
+            setStatus('Подключение...', 'wait');
+
+            if (url.endsWith('.flv')) {
+                // HTTP-FLV через flv.js
+                if (flvjs.isSupported()) {
+                    currentPlayer = flvjs.createPlayer({ type: 'flv', url: url });
+                    currentPlayer.attachMediaElement(video);
+                    currentPlayer.load();
+                    currentPlayer.play().then(() => {
+                        setStatus('Воспроизведение (HTTP-FLV)', 'ok');
+                    }).catch(() => {
+                        setStatus('Поток не найден или не запущен', 'err');
+                    });
+                    currentPlayer.on(flvjs.Events.ERROR, () => {
+                        setStatus('Ошибка воспроизведения FLV', 'err');
+                    });
+                } else {
+                    setStatus('flv.js не поддерживается в этом браузере', 'err');
+                }
+            } else if (url.endsWith('.m3u8')) {
+                // HLS через hls.js
+                if (Hls.isSupported()) {
+                    currentPlayer = new Hls();
+                    currentPlayer.loadSource(url);
+                    currentPlayer.attachMedia(video);
+                    currentPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+                        video.play();
+                        setStatus('Воспроизведение (HLS)', 'ok');
+                    });
+                    currentPlayer.on(Hls.Events.ERROR, (event, data) => {
+                        if (data.fatal) {
+                            setStatus('Ошибка загрузки HLS потока', 'err');
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    // Safari — нативная поддержка HLS
+                    video.src = url;
+                    video.play();
+                    setStatus('Воспроизведение (HLS, нативное)', 'ok');
+                }
+            } else {
+                setStatus('Неподдерживаемый формат. Используйте .flv или .m3u8', 'err');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  srs:
+    image: ossrs/srs:5
+    container_name: srs-server
+    restart: unless-stopped
+    ports:
+      - "1935:1935"   # RTMP
+      - "8080:8080"   # HTTP (HLS, HTTP-FLV, плеер)
+      - "1985:1985"   # HTTP API
+      - "8000:8000/udp" # WebRTC
+    volumes:
+      - ./conf/srs.conf:/usr/local/srs/conf/srs.conf
+      - ./html:/usr/local/srs/objs/nginx/html/custom
+    environment:
+      - CANDIDATE=${CANDIDATE:-localhost}
